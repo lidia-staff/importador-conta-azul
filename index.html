@@ -187,33 +187,63 @@
     return out;
   }
 
-  function parseStone(lines,venc,centro){
-    const start=lines.findIndex(l=>/LANÇAMENTOS\s+DA\s+FATURA/i.test(l));
-    const section=start>=0?lines.slice(start):lines.slice();
-    const fix=s=>s
-      .replace(/^(\d{1,2})([a-z]{3})/i,'$1 $2')
-      .replace(/(\d{1,2})\s*[06]ut/i,'$1 out')
-      .replace(/(\d{1,2})\s*2go/i,'$1 ago')
-      .replace(/(\d{1,2})\s*1nov/i,'$1 nov')
-      .replace(/R\s*\$/g,'R$');
-    const L=section.map(fix);
-    const ano=venc.slice(-4); const out=[];
-    const reData=/^(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b/i;
-    const reValor=/(?:R\$\s*)?([\d\.]{1,3}(?:\.[\d]{3})*,\d{2})\b/;
-    const reParc=/Parcela\s+\d+\s+de\s+\d+/i;
-    const ignorar=/(Pagamento\s+feito|ENCARGOS|OPÇÕES|RESUMO|OBRIGAÇÕES|TOTAL|DISPON[IÍ]VEL|SALDO|DATA\b|DESCRIÇÃO\b|VALOR\b)/i;
+  function parseStone(lines, venc, centro){
+  // 1) Normalizações e setup
+  const start = lines.findIndex(l => /LANÇAMENTOS\s+DA\s+FATURA/i.test(l));
+  const section = start >= 0 ? lines.slice(start) : lines.slice();
 
-    for(let i=0;i<L.length;i++){
-      const line=L[i]; if(!line||ignorar.test(line)) continue;
-      const mD=line.match(reData); const mV=line.match(reValor); if(!(mD&&mV)) continue;
-      const dd=mD[1].padStart(2,'0'); const mm=MESES[mD[2].toLowerCase()]||'01'; const data=`${dd}/${mm}/${ano}`;
-      let desc=line.slice(mD.index+mD[0].length).replace(reValor,'').replace(/[—–-]\s*/,'').trim();
-      const next=L[i+1]||''; if(reParc.test(next)) desc=(desc+' '+next).trim();
-      const valor=toNegBR(mV[1]); if(!desc) desc='(sem descrição)';
-      out.push(rowCA(data,venc,valor,categoria(desc),desc,centro));
+  // corrige artefatos comuns do OCR e padroniza valores
+  const fix = s => s
+    .replace(/^(\d{1,2})([a-z]{3})/i, '$1 $2')         // "1nov" -> "1 nov"
+    .replace(/(\d{1,2})\s*2go/i, '$1 ago')             // "2go" -> "ago"
+    .replace(/(\d{1,2})\s*06ut/i, '$1 out')            // "06ut" -> "out"
+    .replace(/(\d{1,2})\s*1nov/i, '$1 nov')            // "1nov" -> "nov"
+    .replace(/R\s*\$/g, 'R$');                         // "R $" -> "R$"
+
+  const L = section.map(fix);
+  const ano = venc.slice(-4);
+  const out = [];
+
+  // data "dd mmm"
+  const reData = /^(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b/i;
+  // valor pode estar na mesma linha ou sem espaço após "R$"
+  const reValor = /(?:R\$\s*|R\$)?(\d{1,3}(?:\.\d{3})*,\d{2})\b/;
+  const reParc  = /Parcela\s+\d+\s+de\s+\d+/i;
+  const ignorar=/(Pagamento\s+feito|ENCARGOS|OPÇÕES|RESUMO|OBRIGAÇÕES|TOTAL|DISPON[IÍ]VEL|SALDO|DATA\b|DESCRIÇÃO\b|VALOR\b)/i;
+
+  for (let i=0; i<L.length; i++){
+    let line = L[i];
+    if (!line || ignorar.test(line)) continue;
+
+    const mD = line.match(reData);
+    if (!mD) continue; // só começa a ler quando acha uma data
+
+    // monta data competência usando o ano do vencimento
+    const dd = mD[1].padStart(2,'0');
+    const mm = ( {jan:'01',fev:'02',mar:'03',abr:'04',mai:'05',jun:'06',jul:'07',ago:'08',set:'09',out:'10',nov:'11',dez:'12'} )[mD[2].toLowerCase()] || '01';
+    const dataComp = `${dd}/${mm}/${ano}`;
+
+    // tira a data da linha e começa a formar a descrição
+    let desc = line.slice(mD.index + mD[0].length).replace(reValor,'').replace(/[—–-]\s*/,'').trim();
+    if (reParc.test(L[i+1]||'')) desc = (desc + ' ' + (L[i+1]||'')).trim();
+
+    // 2) procurar o valor: mesma linha OU nas 2 próximas
+    let valorMatch = line.match(reValor) || (L[i+1] && L[i+1].match(reValor)) || (L[i+2] && L[i+2].match(reValor));
+    if (!valorMatch){
+      // se não achou, é provavelmente ruído de OCR → ignora este bloco
+      continue;
     }
-    return out;
+
+    const valor = toNegBR(valorMatch[1]);
+    if (!desc) desc = '(sem descrição)';
+
+    // proteção extra: pula linhas claramente não-transação
+    if (ignorar.test(desc)) continue;
+
+    out.push(rowCA(dataComp, venc, valor, categoria(desc), desc, centro));
   }
+  return out;
+}
 
   let rawText=''; let lines=[]; let rows=[];
   $('file').addEventListener('change',async (ev)=>{
@@ -287,4 +317,5 @@
 })();
 </script>
 </body>
+
 </html>
