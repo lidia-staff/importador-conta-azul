@@ -1,178 +1,151 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Importador de Faturas → CSV do Conta Azul</title>
 
-<!-- Tailwind (layout leve) -->
+<!-- Tailwind (CDN) -->
 <script src="https://cdn.tailwindcss.com"></script>
 
 <!-- pdf.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-</script>
+<script>window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
 
-<style>
-  .mono{font-family:ui-monospace,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
-</style>
+<!-- Tesseract (OCR) -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
+
+<style>.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}</style>
 </head>
 <body class="bg-slate-50 text-slate-800">
 <div class="max-w-6xl mx-auto p-6">
   <header class="mb-6">
     <h1 class="text-2xl md:text-3xl font-bold">Importador de Faturas → CSV do Conta Azul</h1>
-    <p class="text-sm text-slate-600 mt-1">
-      Stone (com OCR automático quando necessário) e Santander. Valores negativos, 10 colunas padrão Conta Azul.
-    </p>
+    <p class="text-sm text-slate-600 mt-1">Stone (com OCR quando necessário) e Santander. Valores negativos, 10 colunas padrão Conta Azul.</p>
   </header>
 
-  <!-- ALERT -->
-  <div id="alert" class="hidden mb-4 rounded-lg border p-3 text-sm"></div>
+  <div id="alert" class="hidden mb-4 p-3 rounded border text-sm"></div>
 
-  <!-- FORM -->
-  <section class="bg-white rounded-xl shadow-sm p-5 mb-6">
+  <section class="bg-white shadow rounded-xl p-5 mb-6">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
         <label class="block text-sm font-medium mb-1">1) Fatura (PDF ou TXT)</label>
         <input id="file" type="file" accept=".pdf,.txt"
-               class="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200" />
+               class="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"/>
         <p id="fileName" class="text-xs text-slate-500 mt-1"></p>
       </div>
       <div>
         <label class="block text-sm font-medium mb-1">2) Data de Vencimento (dd/mm/aaaa)</label>
         <input id="venc" type="text" placeholder="dd/mm/aaaa"
-               class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring focus:ring-indigo-200" />
+               class="w-full px-3 py-2 border rounded focus:outline-none focus:ring focus:ring-indigo-200"/>
         <p class="text-xs text-slate-500 mt-1">O <b>ano</b> desta data será aplicado às compras.</p>
       </div>
-
       <div>
         <label class="block text-sm font-medium mb-1">3) Conta (Conta Azul)</label>
-        <select id="conta"
-                class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring focus:ring-indigo-200">
+        <select id="conta" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring focus:ring-indigo-200">
           <option>Cartão de Crédito Stone</option>
           <option>Cartão de Crédito Santander</option>
         </select>
-        <label class="inline-flex items-center gap-2 text-sm text-slate-600 mt-2 select-none">
-          <input id="forceOCR" type="checkbox" class="accent-indigo-600">
-          Forçar OCR (apenas se a fatura for escaneada / sem texto)
+        <label class="flex items-center gap-2 mt-2 text-sm">
+          <input id="forceOcr" type="checkbox" class="h-4 w-4"/> Forçar OCR (apenas se a fatura for escaneada / sem texto)
         </label>
       </div>
-
       <div>
         <label class="block text-sm font-medium mb-1">4) Centro de Custo</label>
         <input id="centro" type="text" value="Café"
-               class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring focus:ring-indigo-200" />
+               class="w-full px-3 py-2 border rounded focus:outline-none focus:ring focus:ring-indigo-200"/>
       </div>
     </div>
-
     <div class="mt-4 flex gap-3">
-      <button id="processBtn"
-              class="px-4 py-2 rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50">
-        Processar Fatura
-      </button>
-      <button id="exportBtn"
-              class="px-4 py-2 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
-              disabled>
-        Exportar CSV
-      </button>
+      <button id="processBtn" class="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">Processar Fatura</button>
+      <button id="exportBtn" class="px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700" disabled>Exportar CSV</button>
     </div>
   </section>
 
-  <!-- PREVIEW -->
-  <section class="bg-white rounded-xl shadow-sm p-5">
+  <section class="bg-white shadow rounded-xl p-5">
     <div class="flex items-center justify-between mb-3">
       <h2 class="font-semibold">Pré-visualização</h2>
-      <span id="countTag" class="text-xs px-2 py-1 rounded-full bg-slate-100">0 lançamentos</span>
+      <span id="countTag" class="text-xs px-2 py-1 rounded bg-slate-100">0 lançamentos</span>
     </div>
-    <div class="overflow-auto border rounded-lg">
+    <div class="overflow-auto border rounded">
       <table class="min-w-full text-sm">
         <thead class="bg-slate-50 text-slate-600">
-        <tr>
-          <th class="text-left px-3 py-2">Competência</th>
-          <th class="text-left px-3 py-2">Descrição</th>
-          <th class="text-left px-3 py-2">Categoria</th>
-          <th class="text-right px-3 py-2">Valor (R$)</th>
-        </tr>
+          <tr>
+            <th class="text-left px-3 py-2">Competência</th>
+            <th class="text-left px-3 py-2">Descrição</th>
+            <th class="text-left px-3 py-2">Categoria</th>
+            <th class="text-right px-3 py-2">Valor (R$)</th>
+          </tr>
         </thead>
         <tbody id="tbody" class="divide-y"></tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-2">
-      O CSV final contém as 10 colunas exigidas pelo Conta Azul; valores negativos; Centro de Custo = Café.
-    </p>
+    <p class="text-xs text-slate-500 mt-2">O CSV final contém as 10 colunas exigidas pelo Conta Azul; valores negativos; Centro de Custo = Café.</p>
 
     <details class="mt-4">
       <summary class="cursor-pointer text-sm text-slate-600">▼ Texto extraído (debug)</summary>
-      <pre id="debugText" class="mt-2 text-xs bg-slate-50 p-3 rounded border overflow-auto mono"
-           style="max-height:280px"></pre>
+      <textarea id="debug" class="w-full h-56 mt-2 p-2 border rounded mono text-xs"></textarea>
     </details>
   </section>
 </div>
 
 <script>
 (function(){
-  // ------------------ UI helpers ------------------
-  const $ = (id) => document.getElementById(id);
+  // --------- Utils ----------
+  const $ = id => document.getElementById(id);
   const alertBox = $('alert');
+
   function showAlert(msg, type='info'){
-    alertBox.className = 'mb-4 rounded-lg border p-3 text-sm';
-    if(type==='error') alertBox.className += ' bg-red-50 border-red-300 text-red-800';
-    else if(type==='success') alertBox.className += ' bg-emerald-50 border-emerald-300 text-emerald-800';
-    else alertBox.className += ' bg-slate-50 border-slate-300 text-slate-800';
+    const styles = {
+      info:   'border-slate-300 bg-slate-50 text-slate-800',
+      error:  'border-red-300 bg-red-50 text-red-800',
+      ok:     'border-emerald-300 bg-emerald-50 text-emerald-800'
+    };
+    alertBox.className = 'mb-4 p-3 rounded border text-sm';
+    alertBox.classList.add(...styles[type].split(' '));
     alertBox.textContent = msg;
     alertBox.classList.remove('hidden');
   }
   function hideAlert(){ alertBox.classList.add('hidden'); }
 
-  // ------------------ Constantes ------------------
-  const MESES = { jan:'01', fev:'02', mar:'03', abr:'04', mai:'05', jun:'06', jul:'07', ago:'08', set:'09', out:'10', nov:'11', dez:'12' };
+  const MESES = {jan:'01',fev:'02',mar:'03',abr:'04',mai:'05',jun:'06',jul:'07',ago:'08',set:'09',out:'10',nov:'11',dez:'12'};
+  const MESES_RE = '(?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)';
+
   const HEADERS = [
-    'Data de Competência',
-    'Data de Vencimento',
-    'Data de Pagamento',
-    'Valor',
-    'Categoria',
-    'Descrição',
-    'Cliente/Fornecedor',
-    'CNPJ/CPF Cliente/Fornecedor',
-    'Centro de Custo',
-    'Observações'
+    'Data de Competência','Data de Vencimento','Data de Pagamento','Valor','Categoria',
+    'Descrição','Cliente/Fornecedor','CNPJ/CPF Cliente/Fornecedor','Centro de Custo','Observações'
   ];
 
-  // ------------------ Funções util ------------------
-  function normalize(s){ return String(s||'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase(); }
+  const CATEGORIAS = {
+    'seguro':'Seguro de Imóveis',
+    'canva':'Software / Licença de Uso',
+    'google':'Software / Licença de Uso',
+    'gsuite':'Software / Licença de Uso',
+    'magalu':'Eletrodomésticos',
+    'geladeira':'Eletrodomésticos',
+    'leroy':'Despesas a identificar',
+    'mercadolivre':'Despesas a identificar',
+    'default':'Despesas a identificar'
+  };
+
+  function normalize(s){ return (s||'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase(); }
   function getCategoria(desc){
     const d = normalize(desc);
-    if(d.includes('seguro')) return 'Seguro de Imóveis';
-    if(d.includes('canva') || d.includes('google') || d.includes('gsuite')) return 'Software / Licença de Uso';
-    if(d.includes('magalu') || d.includes('geladeira')) return 'Eletrodomésticos';
-    return 'Despesas a identificar';
+    for(const k in CATEGORIAS){ if(k!=='default' && d.includes(k)) return CATEGORIAS[k]; }
+    return CATEGORIAS.default;
   }
   function toNegBR(str){
-    const cleaned = String(str).replace(/\s/g,'').replace(/\./g,'').replace(',', '.');
+    const cleaned = String(str).replace(/R\$|\s/g,'').replace(/\./g,'').replace(',', '.');
     const v = parseFloat(cleaned);
-    return -Math.abs(isFinite(v) ? v : 0);
+    return -Math.abs(isFinite(v)?v:0);
   }
-  function fmtBR(n){ return (n<0?'-':'') + Math.abs(n).toFixed(2).replace('.', ','); }
+  function fmtBR(n){ return (n<0?'-':'')+Math.abs(n).toFixed(2).replace('.',','); }
   function quoteCSV(val){
     const s = String(val ?? '');
-    return (/[;"\n]/.test(s)) ? '"' + s.replace(/"/g,'""') + '"' : s;
-  }
-  function detectVencimento(text){
-    let m = text.match(/VENCE\s+EM\s+(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(\d{4})/i);
-    if(m){ const mm = MESES[m[2].toLowerCase()]||'01'; return `${m[1]}/${mm}/${m[3]}`; }
-    m = text.match(/Vencimento\D+(\d{2}\/\d{2}\/\d{4})/i);
-    return m ? m[1] : '';
-  }
-  function detectConta(text){
-    if(/stone/i.test(text)) return 'Cartão de Crédito Stone';
-    if(/santander/i.test(text)) return 'Cartão de Crédito Santander';
-    return $('conta').value;
+    return (/[;"\n]/.test(s)) ? `"${s.replace(/"/g,'""')}"` : s;
   }
   function rowCA(dataComp, venc, valor, categoria, descricao, conta, centro){
-    const centroFmt = (centro||'').trim() || 'Café';
+    const centroFmt = (centro||'').trim().replace(/^cafe$/i,'Café') || 'Café';
     return {
       'Data de Competência': dataComp,
       'Data de Vencimento': venc,
@@ -187,257 +160,222 @@
     };
   }
 
-  // ------------------ Leitura de PDF ------------------
-  async function pdfToLines(file){
+  function detectVencimento(text){
+    let m = text.match(/VENCE\s+EM\s+(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(\d{4})/i);
+    if(m){ const mm = MESES[m[2].toLowerCase()]||'01'; return `${m[1]}/${mm}/${m[3]}`; }
+    m = text.match(/Vencimento\D+(\d{2}\/\d{2}\/\d{4})/i);
+    return m ? m[1] : '';
+  }
+  function detectConta(text){
+    if(/stone/i.test(text)) return 'Cartão de Crédito Stone';
+    if(/santander/i.test(text)) return 'Cartão de Crédito Santander';
+    return $('conta').value;
+  }
+
+  // --------- PDF extractors ----------
+  async function pdfToTextLines(file){
     const ab = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({data:ab, disableWorker:true}).promise;
-    const lines=[];
-    for(let p=1; p<=pdf.numPages; p++){
+    const pdf = await window.pdfjsLib.getDocument({data:ab}).promise;
+    const lines=[]; let full='';
+
+    for(let p=1;p<=pdf.numPages;p++){
       const page = await pdf.getPage(p);
-      const content = await page.getTextContent({ normalizeWhitespace:true, disableCombineTextItems:false });
+      const txt = await page.getTextContent({normalizeWhitespace:true,disableCombineTextItems:false});
       const buckets = new Map();
-      for(const it of content.items){
+      for(const it of txt.items){
         const y = Math.round(it.transform[5]);
         const x = Math.round(it.transform[4]);
         const arr = buckets.get(y) || [];
-        arr.push({x, str: it.str});
-        buckets.set(y, arr);
+        arr.push({x,str:it.str}); buckets.set(y,arr);
       }
       const ys = Array.from(buckets.keys()).sort((a,b)=>b-a);
       for(const y of ys){
-        const arr = buckets.get(y).sort((a,b)=>a.x-b.x);
+        const arr=buckets.get(y).sort((a,b)=>a.x-b.x);
         const line = arr.map(o=>o.str).join(' ').replace(/\s{2,}/g,' ').trim();
-        if(line) lines.push(line);
+        if(line){ lines.push(line); full += line+'\n'; }
       }
-      lines.push('');
+      lines.push(''); full+='\n';
     }
-    return lines;
+    return {lines, fullText:full};
   }
 
-  // OCR sob demanda (usado apenas se necessário ou se marcado “Forçar OCR”)
-  async function runOCRLastPages(file, pagesBack=3){
-    if(!window.Tesseract){
-      await new Promise(res=>{
-        const s=document.createElement('script');
-        s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-        s.onload=res; document.head.appendChild(s);
-      });
-    }
+  async function pdfToOCRText(file, maxPages=5){
     const ab = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({data:ab, disableWorker:true}).promise;
-    let text = '';
-    const first = Math.max(1, pdf.numPages - pagesBack + 1);
-    for(let p=first; p<=pdf.numPages; p++){
+    const pdf = await window.pdfjsLib.getDocument({data:ab}).promise;
+    let full=''; const lines=[];
+    const worker = Tesseract.createWorker();
+
+    await worker.load(); await worker.loadLanguage('por'); await worker.initialize('por');
+
+    for(let p=1;p<=pdf.numPages && p<=maxPages;p++){
       const page = await pdf.getPage(p);
-      const viewport = page.getViewport({ scale: 1.6 });
+      const viewport = page.getViewport({scale:2});
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       canvas.width = viewport.width; canvas.height = viewport.height;
       await page.render({canvasContext:ctx, viewport}).promise;
-      const { data:{ text:ocr } } = await Tesseract.recognize(canvas, 'por');
-      text += '\n' + ocr;
+      const { data: { text } } = await worker.recognize(canvas);
+      const t = text.replace(/[ \t]+/g,' ').trim();
+      if(t){ full += t+'\n'; t.split(/\r?\n/).forEach(s=>{ s=s.trim(); if(s) lines.push(s); }); }
     }
-    return text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    await worker.terminate();
+    return {lines, fullText:full};
   }
 
-  function txtToLines(text){ return text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean); }
+  // --------- Parsers ----------
+  function parseStone(lines, venc, conta, centro, rawText){
+    // Tenta focar no bloco "LANÇAMENTOS DA FATURA ..." e capturar:
+    // "2 jun MERCADOLIVRE... R$ 16,27"
+    const year = (venc.match(/\d{4}$/)||['',new Date().getFullYear()])[0];
+    const reLinha = new RegExp(`^(\\d{1,2})\\s+${MESES_RE}\\b.*?R\\$\\s*([\\d\\.\\,]+)\\s*$`, 'i');
+    const reCab = /LAN[ÇC]AMENTOS DA FATURA/i;
+    const reIgnorar = /(Pagamento feito|Total|LIMITE|RESUMO|ENCARGOS|OBRIGA[ÇC][ÕO]ES|OUTROS LAN[ÇC]AMENTOS)/i;
 
-  // ------------------ Parsers ------------------
-  function parseStone(linesAll, venc, conta, centro){
-    const fix = s => String(s||'')
-      .replace(/R\s*\$/g,'R$')
-      .replace(/^(\d{1,2})([a-z]{3})/i,'$1 $2') // 1nov → 1 nov
-      .replace(/\b2go\b/i,'ago').replace(/\b06ut\b/i,'out')
-      .replace(/[—–]\s*/g,' - ').replace(/\s{2,}/g,' ').trim();
-    const L0 = linesAll.map(fix);
-
-    const ANO = (venc||'').slice(-4) || String(new Date().getFullYear());
-    const reStart = /^LANÇAMENTOS DA FATURA\b/i;
-    const reStop  = /^(ENCARGOS APLICÁVEIS À FATURA|OBRIGAÇÕES FUTURAS|RESUMO DA FATURA)/i;
-    const reHeader= /^(LANÇAMENTOS|CARTÃO|OUTROS LANÇAMENTOS|DATA|DESCRIÇÃO|VALOR)\b/i;
-    const reIgnore= /(Pagamento\s+feito)/i;
-
-    // recorta seção
-    let start = L0.findIndex(l=>reStart.test(l));
-    if(start<0) start=0;
-    let end = L0.slice(start+1).findIndex(l=>reStop.test(l));
-    if(end<0) end=L0.length-start;
-    const L = L0.slice(start, start+end+1);
-
-    const reData  = /^(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b/i;
-    const reValor = /(?:R\$\s*)?([+-]?\d{1,3}(?:[.\s]?\d{3})*,\d{2})\b/;
-    const reParc  = /Parcela\s+\d+\s+de\s+\d+/i;
+    let inBlock = false;
     const out=[];
+    for(let i=0;i<lines.length;i++){
+      const l = lines[i];
+      if(reCab.test(l)){ inBlock = true; continue; }
+      if(!inBlock) continue;
+      if(!l || reIgnorar.test(l)) continue;
 
-    for(let i=0;i<L.length;i++){
-      const l = L[i];
-      if(!l || reHeader.test(l) || reIgnore.test(l)) continue;
-
-      const md = l.match(reData);
-      if(!md) continue;
-
-      const dd = md[1].padStart(2,'0');
-      const mm = MESES[md[2].toLowerCase()] || '01';
-      const dataComp = `${dd}/${mm}/${ANO}`;
-
-      let descParts=[];
-      const resto = l.slice(md.index+md[0].length).trim();
-      if(resto) descParts.push(resto);
-      if(reParc.test(L[i+1]||'')) descParts.push(L[i+1].trim());
-
-      let valorMatch = l.match(reValor) || (L[i+1]&&L[i+1].match(reValor))
-                     || (L[i+2]&&L[i+2].match(reValor)) || (L[i+3]&&L[i+3].match(reValor));
-
-      // agrega linhas intermediárias para descrição
-      let j=i+1;
-      while(j<L.length && j<=i+3){
-        const s=L[j];
-        if(!s) { j++; continue; }
-        if(reData.test(s) || reStop.test(s)) break;
-        if(!reHeader.test(s) && !reIgnore.test(s)) descParts.push(s);
-        j++;
+      const m = l.match(reLinha);
+      if(m){
+        const dd = m[1].padStart(2,'0');
+        const mes = (l.match(new RegExp(`\\b(${MESES_RE})\\b`,'i'))||[])[1]||'jan';
+        const mm = MESES[mes.toLowerCase()]||'01';
+        // Descrição = tudo entre a data e o valor, nas linhas corrente + possíveis linhas seguintes (até achar novo início ou valor)
+        let desc = l.replace(reLinha, '').trim();
+        // fallback: pega bloco sem o valor na mesma linha → concatena próximas linhas até achar valor
+        if(!desc || desc.length<4){
+          // tenta pegar a parte “entre” a data e antes do R$
+          const semData = l.replace(new RegExp(`^\\d{1,2}\\s+${MESES_RE}\\b\\s*`,'i'),'');
+          desc = semData.replace(/R\$\s*[\d\.\,]+\s*$/,'').trim();
+        }
+        const valor = toNegBR(m[2]);
+        const dataComp = `${dd}/${mm}/${year}`;
+        if(desc && isFinite(Math.abs(valor))){
+          out.push(rowCA(dataComp, venc, valor, getCategoria(desc), desc, conta, centro));
+        }
       }
-
-      if(!valorMatch) continue;
-      const descricao = descParts.join(' ').trim();
-      if(!descricao || reHeader.test(descricao) || reIgnore.test(descricao)) continue;
-
-      const valor = toNegBR(valorMatch[1]);
-      out.push(rowCA(dataComp, venc, valor, getCategoria(descricao), descricao, conta, centro));
-      i = j-1;
     }
     return out;
   }
 
-  function parseSantander(lines, venc, conta, centro){
-    const out=[]; let inBlock=false;
-    for(const l0 of lines){
-      const l = String(l0||'').replace(/\s{2,}/g,' ').trim();
+  function parseSantander(lines, venc, conta, centro, rawText){
+    // 1) Parser original (quando o PDF tem texto estruturado)
+    const res=[]; let inBlock=false;
+    for(const l of lines){
       if(/Trans[aã]coes?\s+Nacionais/i.test(l)){ inBlock=true; continue; }
       if(inBlock && /(Total em R\$|Total desta fatura)/i.test(l)) break;
       if(!inBlock) continue;
-
-      const m = l.match(/(\d{2}-\d{2}-\d{4})\s+(.+?)\s+([Rr]\$?\s*[\d.\s]*\d+,\d{2}|\d+,\d{2})$/);
+      const m = l.match(/(\d{2}[-/]\d{2}[-/]\d{4})\s+(.+?)\s+([\d\.,]+)$/);
       if(m){
         const data = m[1].replace(/-/g,'/');
         const desc = m[2].trim();
-        const valorNum = (m[3]||'').replace(/R\$\s*/i,'');
-        out.push(rowCA(data, venc, toNegBR(valorNum), getCategoria(desc), desc, conta, centro));
+        const valor = toNegBR(m[3]);
+        res.push(rowCA(data, venc, valor, getCategoria(desc), desc, conta, centro));
       }
+    }
+    if(res.length) return res;
+
+    // 2) Fallback OCR — varre o texto inteiro
+    const out=[];
+    const texto = (rawText||lines.join('\n')).replace(/[ \t]+/g,' ').replace(/\u00A0/g,' ');
+    const re = /(^|\n)\s*(\d{2})[\/-](\d{2})[\/-](\d{4})\s+(.+?)\s+(?:R?\$?\s*)?([0-9]{1,3}(?:\.[0-9]{3})*,\d{2})(?=\s|$)/gim;
+    const descartar = /(Pagamento|Total|Encargos|Juros|Rotativo|CET|IOF|Anuidade|Tarifa|Parcele|Demonstrativo|Resumo|Limite)/i;
+    let m;
+    while((m = re.exec(texto))!==null){
+      const data = `${m[2]}/${m[3]}/${m[4]}`;
+      const desc = m[5].trim().replace(/\s{2,}/g,' ');
+      const valor = toNegBR(m[6]);
+      if(descartar.test(desc)) continue;
+      if(!isFinite(Math.abs(valor))) continue;
+      out.push(rowCA(data, venc, valor, getCategoria(desc), desc, conta, centro));
     }
     return out;
   }
 
-  // ------------------ Estado / UI ------------------
-  let rawText=''; let lines=[]; let rows=[];
-  $('file').addEventListener('change', async ev=>{
+  // --------- State/UI ----------
+  let rawText = ''; let lines = []; let rows = [];
+
+  $('file').addEventListener('change', async (ev)=>{
     hideAlert(); rows=[]; renderTable([]);
     const f = ev.target.files[0]; if(!f) return;
     $('fileName').textContent = `Arquivo: ${f.name}`;
-
     try{
-      if(f.type==='application/pdf' || f.name.toLowerCase().endsWith('.pdf')){
-        // 1ª leitura: apenas texto nativo do PDF (sem OCR aqui)
-        lines = await pdfToLines(f);
-        rawText = lines.join('\n');
+      if(f.type==='application/pdf' || /\.pdf$/i.test(f.name)){
+        // Tenta texto normal
+        let extracted = await pdfToTextLines(f);
+        // Se usuário marcou OCR ou não veio texto útil, cai pro OCR
+        if($('forceOcr').checked || !/\w{3,}/.test(extracted.fullText)){
+          extracted = await pdfToOCRText(f, 5); // até 5 páginas
+        }
+        lines = extracted.lines;
+        rawText = extracted.fullText;
       }else{
-        const txt = await f.text(); rawText = txt; lines = txtToLines(txt);
+        const txt = await f.text(); rawText = txt; lines = txt.split(/\r?\n/).map(s=>s.trim());
       }
-      $('debugText').textContent = rawText.slice(0,8000);
-      const autoVenc = detectVencimento(rawText); if(autoVenc) $('venc').value = autoVenc;
+      $('debug').value = rawText;
+      // auto-detectar vencimento/conta
+      const autoVenc = detectVencimento(rawText);
+      if(autoVenc) $('venc').value = autoVenc;
       $('conta').value = detectConta(rawText);
-      showAlert('Arquivo carregado. Confira vencimento/conta e clique em "Processar Fatura".', 'success');
-    }catch(err){
-      console.error(err); showAlert('Erro ao ler o arquivo: '+err.message, 'error');
-    }
+      showAlert('Arquivo carregado. Confira vencimento/conta e clique em “Processar Fatura”.','ok');
+    }catch(e){ console.error(e); showAlert('Erro ao ler o arquivo: '+e.message,'error'); }
   });
 
-  $('processBtn').addEventListener('click', async ()=>{
+  $('processBtn').addEventListener('click', ()=>{
     hideAlert(); rows=[]; renderTable([]);
+    if(!rawText){ showAlert('Envie a fatura (PDF/TXT) antes de processar.','error'); return; }
     const venc = $('venc').value.trim();
-    const conta= $('conta').value;
-    const centro= $('centro').value.trim() || 'Café';
-    const f = $('file').files[0];
+    if(!/^\d{2}\/\d{2}\/\d{4}$/.test(venc)){ showAlert('Informe a Data de Vencimento no formato dd/mm/aaaa.','error'); return; }
+    const conta = $('conta').value;
+    const centro = $('centro').value.trim()||'Café';
 
-    if(!rawText){ showAlert('Envie a fatura primeiro.', 'error'); return; }
-    if(!/^\d{2}\/\d{2}\/\d{4}$/.test(venc)){ showAlert('Informe o vencimento no formato dd/mm/aaaa.', 'error'); return; }
-
-    const tryParse = (whichLines) => {
-      if(/stone/i.test(conta)) return parseStone(whichLines, venc, conta, centro);
-      if(/santander/i.test(conta)) return parseSantander(whichLines, venc, conta, centro);
+    let parsed=[];
+    if(/stone/i.test(conta)) parsed = parseStone(lines, venc, conta, centro, rawText);
+    else if(/santander/i.test(conta)) parsed = parseSantander(lines, venc, conta, centro, rawText);
+    else {
       const auto = detectConta(rawText);
       $('conta').value = auto;
-      return /stone/i.test(auto) ? parseStone(whichLines, venc, auto, centro) : parseSantander(whichLines, venc, auto, centro);
-    };
-
-    let parsed = [];
-
-    // Se usuário marcou "Forçar OCR", já vamos direto para OCR
-    if($('forceOCR').checked && f && (f.type==='application/pdf' || f.name.toLowerCase().endsWith('.pdf'))){
-      try{
-        const ocrLines = await runOCRLastPages(f, 3);
-        parsed = tryParse(ocrLines);
-        rawText = ocrLines.join('\n');
-        $('debugText').textContent = rawText.slice(0,8000);
-      }catch(e){ console.error('OCR direto (forçado) falhou:', e); }
-    } else {
-      // Caso normal: tenta com texto nativo…
-      parsed = tryParse(lines);
-
-      // …se nada achar, cai para OCR (fallback)
-      if(!parsed.length && f && (f.type==='application/pdf' || f.name.toLowerCase().endsWith('.pdf'))){
-        try{
-          const ocrLines = await runOCRLastPages(f, 3);
-          if(ocrLines && ocrLines.length){
-            parsed = tryParse(ocrLines);
-            rawText = ocrLines.join('\n');
-            $('debugText').textContent = rawText.slice(0,8000);
-          }
-        }catch(e){ console.error('OCR fallback error:', e); }
-      }
+      if(/stone/i.test(auto)) parsed = parseStone(lines, venc, auto, centro, rawText);
+      else parsed = parseSantander(lines, venc, auto, centro, rawText);
     }
 
-    if(!parsed.length){
-      showAlert('Nenhum lançamento identificado. Use “Forçar OCR” apenas se a fatura for escaneada. Confira o “Texto extraído (debug)”.', 'error');
-      $('exportBtn').disabled = true; 
-      return;
-    }
-
+    if(!parsed.length){ showAlert('Nenhum lançamento identificado. Use “Forçar OCR” apenas se a fatura for escaneada. Confira o “Texto extraído (debug)”.','error'); $('exportBtn').disabled = true; return; }
     rows = parsed; renderTable(rows); $('exportBtn').disabled = false;
-    showAlert(`${rows.length} lançamentos identificados. Revise e exporte o CSV.`, 'success');
+    showAlert(`${rows.length} lançamento(s) identificado(s). Revise e exporte o CSV.`,'ok');
   });
 
   $('exportBtn').addEventListener('click', ()=>{
-    if(!rows.length){ showAlert('Nada para exportar.', 'error'); return; }
-    const csv = '\ufeff' + [
-      HEADERS.join(';'),
-      ...rows.map(r=>HEADERS.map(h=>quoteCSV(r[h]??'')).join(';'))
-    ].join('\n');
-    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    if(!rows.length){ showAlert('Nada para exportar.','error'); return; }
+    const csvLines=[HEADERS.join(';')];
+    for(const r of rows){ csvLines.push(HEADERS.map(h=>quoteCSV(r[h]??'')).join(';')); }
+    const blob = new Blob(['\ufeff'+csvLines.join('\n')],{type:'text/csv;charset=utf-8;'});
     const a = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    const ts = new Date().toISOString().slice(0,10).replace(/-/g,'');
-    a.href = url; a.download = `importacao_conta_azul_${ts}.csv`;
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    a.href = URL.createObjectURL(blob);
+    a.download = `importacao_conta_azul_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
   });
 
   function renderTable(items){
+    const tbody = $('tbody'); tbody.innerHTML='';
     $('countTag').textContent = `${items.length} lançamento${items.length===1?'':'s'}`;
-    const tb = $('tbody'); tb.innerHTML='';
     for(const r of items){
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td class="px-3 py-2 text-xs">${r['Data de Competência']}</td>
-        <td class="px-3 py-2 text-xs">${escapeHTML(r['Descrição']).slice(0,180)}</td>
+        <td class="px-3 py-2 text-xs">${escapeHTML(r['Descrição']).slice(0,200)}</td>
         <td class="px-3 py-2 text-xs">${r['Categoria']}</td>
         <td class="px-3 py-2 text-xs text-right">${r['Valor']}</td>`;
-      tb.appendChild(tr);
+      tbody.appendChild(tr);
     }
   }
   function escapeHTML(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
-
 })();
 </script>
 </body>
 </html>
+
 
