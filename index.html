@@ -223,61 +223,97 @@
   }
 
   // --------- Parsers ----------
-  function parseStone(lines, venc, conta, centro, rawText){
-    // Tenta focar no bloco "LANÇAMENTOS DA FATURA ..." e capturar:
-    // "2 jun MERCADOLIVRE... R$ 16,27"
-    const year = (venc.match(/\d{4}$/)||['',new Date().getFullYear()])[0];
-    const reLinha = new RegExp(`^(\\d{1,2})\\s+${MESES_RE}\\b.*?R\\$\\s*([\\d\\.\\,]+)\\s*$`, 'i');
-    const reCab = /LAN[ÇC]AMENTOS DA FATURA/i;
-    const reIgnorar = /(Pagamento feito|Total|LIMITE|RESUMO|ENCARGOS|OBRIGA[ÇC][ÕO]ES|OUTROS LAN[ÇC]AMENTOS)/i;
+ function parseStone(lines, venc, conta, centro){
+  const res = [];
+  // junta debug em um texto, pega só a seção de lançamentos
+  const text = lines.join('\n');
+  const sec = text.match(/LANÇAMENTOS DA FATURA[\s\S]*?(?=ENCARGOS|OBRIGAÇÕES|FATURA EM ATRASO|$)/i);
+  if (!sec) return res;
+  const block = sec[0];
 
-    let inBlock = false;
-    const out=[];
-    for(let i=0;i<lines.length;i++){
-      const l = lines[i];
-      if(reCab.test(l)){ inBlock = true; continue; }
-      if(!inBlock) continue;
-      if(!l || reIgnorar.test(l)) continue;
+  // cada linha candidata tem: data + ... + "R$ valor"
+  // datas podem vir "2 jun", "21 out", "7 nov", etc.
+  const reLinha = /(^|\n)\s*(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b([\s\S]*?)R\$\s*([\d\.\,]+)\s*$/gmi;
 
-      const m = l.match(reLinha);
-      if(m){
-        const dd = m[1].padStart(2,'0');
-        const mes = (l.match(new RegExp(`\\b(${MESES_RE})\\b`,'i'))||[])[1]||'jan';
-        const mm = MESES[mes.toLowerCase()]||'01';
-        // Descrição = tudo entre a data e o valor, nas linhas corrente + possíveis linhas seguintes (até achar novo início ou valor)
-        let desc = l.replace(reLinha, '').trim();
-        // fallback: pega bloco sem o valor na mesma linha → concatena próximas linhas até achar valor
-        if(!desc || desc.length<4){
-          // tenta pegar a parte “entre” a data e antes do R$
-          const semData = l.replace(new RegExp(`^\\d{1,2}\\s+${MESES_RE}\\b\\s*`,'i'),'');
-          desc = semData.replace(/R\$\s*[\d\.\,]+\s*$/,'').trim();
-        }
-        const valor = toNegBR(m[2]);
-        const dataComp = `${dd}/${mm}/${year}`;
-        if(desc && isFinite(Math.abs(valor))){
-          out.push(rowCA(dataComp, venc, valor, getCategoria(desc), desc, conta, centro));
-        }
-      }
+  // vamos percorrer agrupando "Parcela x de y" que vem na linha seguinte
+  // estratégia: primeiro dividimos o bloco por linhas e varremos com um state machine simples
+  const ls = block.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+
+  const MESES = { jan:'01', fev:'02', mar:'03', abr:'04', mai:'05', jun:'06', jul:'07', ago:'08', set:'09', out:'10', nov:'11', dez:'12' };
+  const ano = anoFromVencimento();
+
+  for (let i=0;i<ls.length;i++){
+    // detecta início: "2 jun", "21 out", "7 nov" etc.
+    const d = ls[i].match(/^(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b/i);
+    if (!d) continue;
+    const dd= d[1].padStart(2,'0');
+    const mm= MESES[d[2].toLowerCase()] || '01';
+    const dataComp = `${dd}/${mm}/${ano}`;
+
+    // descrição pode ser na MESMA linha após a data, e “Parcela x de y” costuma estar na linha seguinte
+    let desc = ls[i].replace(d[0], '').trim();
+    // pega possível linha “Parcela …”
+    if (i+1 < ls.length && /Parcela\s+\d+\s+de\s+\d+/i.test(ls[i+1])) {
+      desc = (desc ? (desc + ' ') : '') + ls[i+1];
+      i++;
     }
-    return out;
+
+    // agora precisamos achar o valor (pode estar ao final da mesma linha OU na mesma linha “valor”)
+    let valorStr = null;
+    // tenta na linha atual:
+    const vm0 = ls[i].match(/R\$\s*([\d\.\,]+)$/);
+    if (vm0) valorStr = vm0[1];
+    // se não veio, tenta na próxima linha
+    if (!valorStr && i+1<ls.length){
+      const vm1 = ls[i+1].match(/R\$\s*([\d\.\,]+)$/);
+      if (vm1) { valorStr = vm1[1]; i++; }
+    }
+    if (!valorStr) continue; // sem valor, ignora
+
+    const valor = toNegBR(valorStr);
+    const categoria = getCategoria(desc || '(sem descrição)');
+    const descricao = (desc || '(sem descrição)').replace(/\s{2,}/g,' ').trim();
+
+    res.push(rowCA(dataComp, venc, valor, categoria, descricao, conta, centro));
   }
 
-  function parseSantander(lines, venc, conta, centro, rawText){
-    // 1) Parser original (quando o PDF tem texto estruturado)
-    const res=[]; let inBlock=false;
-    for(const l of lines){
-      if(/Trans[aã]coes?\s+Nacionais/i.test(l)){ inBlock=true; continue; }
-      if(inBlock && /(Total em R\$|Total desta fatura)/i.test(l)) break;
-      if(!inBlock) continue;
-      const m = l.match(/(\d{2}[-/]\d{2}[-/]\d{4})\s+(.+?)\s+([\d\.,]+)$/);
-      if(m){
-        const data = m[1].replace(/-/g,'/');
-        const desc = m[2].trim();
-        const valor = toNegBR(m[3]);
-        res.push(rowCA(data, venc, valor, getCategoria(desc), desc, conta, centro));
-      }
-    }
-    if(res.length) return res;
+  return res;
+}
+  function parseSantander(lines, venc, conta, centro){
+  const res = [];
+  let inBlock = false;
+
+  // padrões para eliminar "resumos" e "pagamentos"
+  const blacklistDesc = [
+    /VALORES EM REAIS/i,
+    /Pagamento de fatura/i,
+    /Pagamento feito/i,
+    /Total em R\$/i,
+    /Total desta fatura/i
+  ];
+
+  for (const lRaw of lines){
+    const l = lRaw.trim();
+
+    if (/Trans[aã]coes?\s+Nacionais/i.test(l)) { inBlock = true; continue; }
+    if (inBlock && /(Total em R\$|Total desta fatura)/i.test(l)) break;
+    if (!inBlock) continue;
+
+    // formata:  "24-06-2025 DALACORTE PARC 04/04 PORTO ALEGRE\ 123,10"
+    const m = l.match(/(\d{2}-\d{2}-\d{4})\s+(.+?)\s+([\d\.\,]+)$/);
+    if (!m) continue;
+
+    // desc limpeza + blacklist
+    const descFull = m[2].replace(/\s{2,}/g, ' ').trim();
+    if (blacklistDesc.some(rx => rx.test(descFull))) continue;
+
+    const data = m[1].replace(/-/g,'/');
+    const valor = toNegBR(m[3]);
+    const cat = getCategoria(descFull);
+    res.push(rowCA(data, venc, valor, cat, descFull, conta, centro));
+  }
+  return res;
+}
 
     // 2) Fallback OCR — varre o texto inteiro
     const out=[];
@@ -375,7 +411,114 @@
   function escapeHTML(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
 })();
 </script>
+// ===== PATCH: helpers =====
+function anoFromVencimento() {
+  const v = document.getElementById('venc')?.value?.trim?.() || '';
+  const m = v.match(/\d{2}\/\d{2}\/(\d{4})/);
+  return m ? Number(m[1]) : (new Date()).getFullYear();
+}
+function toNegBR(str){
+  const cleaned = String(str).replace(/R\$|\s/g,'').replace(/\./g,'').replace(',', '.');
+  const v = Number.parseFloat(cleaned);
+  return -Math.abs(isFinite(v)? v : 0);
+}
+function fmtBR(n){ return (n<0?'-':'') + Math.abs(n).toFixed(2).replace('.', ','); }
+function rowCA(dataComp, venc, valor, categoria, descricao, conta, centro){
+  const centroFmt = (centro && centro.trim()) ? centro.trim().replace(/^cafe$/i,'Café') : 'Café';
+  return {
+    'Data de Competência': dataComp,
+    'Data de Vencimento' : venc,
+    'Data de Pagamento'  : '',
+    'Valor'              : fmtBR(valor),
+    'Categoria'          : categoria,
+    'Descrição'          : descricao,
+    'Cliente/Fornecedor' : '',
+    'CNPJ/CPF Cliente/Fornecedor': '',
+    'Centro de Custo'    : centroFmt,
+    'Observações'        : ''
+  };
+}
+function getCategoria(desc){
+  const rules = [
+    [/seguro/i, 'Seguro de Imóveis'],
+    [/canva|google|gsuite/i, 'Software / Licença de Uso'],
+    [/magalu|geladeira/i, 'Eletrodomésticos'],
+  ];
+  for (const [re, cat] of rules) if (re.test(desc)) return cat;
+  return 'Despesas a identificar';
+}
+
+// ===== PATCH: Santander =====
+function parseSantander(lines, venc, conta, centro){
+  const res=[]; let inBlock=false;
+  const blacklistDesc = [
+    /VALORES EM REAIS/i,
+    /Pagamento de fatura/i,
+    /Pagamento feito/i,
+    /Total em R\$/i,
+    /Total desta fatura/i
+  ];
+  for (const lRaw of lines){
+    const l = lRaw.trim();
+    if (/Trans[aã]coes?\s+Nacionais/i.test(l)) { inBlock=true; continue; }
+    if (inBlock && /(Total em R\$|Total desta fatura)/i.test(l)) break;
+    if (!inBlock) continue;
+
+    const m = l.match(/(\d{2}-\d{2}-\d{4})\s+(.+?)\s+([\d\.\,]+)$/);
+    if (!m) continue;
+
+    const descFull = m[2].replace(/\s{2,}/g,' ').trim();
+    if (blacklistDesc.some(rx => rx.test(descFull))) continue;
+
+    const data = m[1].replace(/-/g,'/');
+    const valor = toNegBR(m[3]);
+    res.push(rowCA(data, venc, valor, getCategoria(descFull), descFull, conta, centro));
+  }
+  return res;
+}
+
+// ===== PATCH: Stone (lê somente a seção “LANÇAMENTOS DA FATURA”) =====
+function parseStone(lines, venc, conta, centro){
+  const res=[];
+  const text = lines.join('\n');
+  const sec = text.match(/LANÇAMENTOS DA FATURA[\s\S]*?(?=ENCARGOS|OBRIGAÇÕES|FATURA EM ATRASO|$)/i);
+  if (!sec) return res;
+  const block = sec[0];
+
+  const ls = block.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const MESES = { jan:'01', fev:'02', mar:'03', abr:'04', mai:'05', jun:'06', jul:'07', ago:'08', set:'09', out:'10', nov:'11', dez:'12' };
+  const ano = anoFromVencimento();
+
+  for (let i=0;i<ls.length;i++){
+    const d = ls[i].match(/^(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b/i);
+    if (!d) continue;
+    const dd = d[1].padStart(2,'0');
+    const mm = MESES[d[2].toLowerCase()] || '01';
+    const dataComp = `${dd}/${mm}/${ano}`;
+
+    let desc = ls[i].replace(d[0], '').trim();
+    if (i+1 < ls.length && /Parcela\s+\d+\s+de\s+\d+/i.test(ls[i+1])) {
+      desc = (desc ? desc + ' ' : '') + ls[i+1];
+      i++;
+    }
+
+    let valorStr = null;
+    const vm0 = ls[i].match(/R\$\s*([\d\.\,]+)$/);
+    if (vm0) valorStr = vm0[1];
+    if (!valorStr && i+1<ls.length){
+      const vm1 = ls[i+1].match(/R\$\s*([\d\.\,]+)$/);
+      if (vm1) { valorStr = vm1[1]; i++; }
+    }
+    if (!valorStr) continue;
+
+    const valor = toNegBR(valorStr);
+    res.push(rowCA(dataComp, venc, valor, getCategoria(desc||'(sem descrição)'), (desc||'(sem descrição)').replace(/\s{2,}/g,' ').trim(), conta, centro));
+  }
+  return res;
+}
+</script>  
 </body>
 </html>
+
 
 
